@@ -1,0 +1,17 @@
+{
+  "name": "agentrouter-openai-compat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local OpenAI-compatible compatibility proxy for AgentRouter clients.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "install-startup": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\\install-startup.ps1",
+    "uninstall-startup": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\\uninstall-startup.ps1",
+    "test": "node test/run-tests.js"
+  },
+  "license": "MIT"
+}
