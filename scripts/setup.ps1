@@ -90,7 +90,7 @@ $envContent = @(
   "PORT=$parsedPort",
   "UPSTREAM_BASE_URL=$($upstreamBaseUrl.TrimEnd('/'))",
   'CHERRY_USE_OPENCODE_PROFILE=true',
-  'OPENCODE_HEADER_PROFILE_FILE=.opencode-header-profile.json',
+  'CLIENT_HEADER_PROFILE_FILE=.client-header-profile.json',
   'DROP_BILLING_SSE=true',
   'LOG_LEVEL=info',
   ''
@@ -108,7 +108,7 @@ Write-Host '下一步（只需一次）：' -ForegroundColor Yellow
 Write-Host "1. OpenCode 的 Base URL 填：http://127.0.0.1:$parsedPort/v1"
 Write-Host "2. Cherry Studio 的 API 地址填：http://127.0.0.1:$parsedPort"
 Write-Host '3. 两个客户端各自继续使用原来的 API Key。'
-Write-Host '4. 先通过 OpenCode 发送一条消息，代理会自动捕获其客户端识别头供 Cherry Studio 使用。'
+Write-Host '4. Cherry Studio 可以直接使用，不需要安装或运行 OpenCode。'
 Write-Host ''
 
 if (Read-YesNo '现在启动代理？' $true) {

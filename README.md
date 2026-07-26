@@ -23,8 +23,9 @@
 1. 双击 `01-一键配置.cmd`；
 2. 按提示确认 AgentRouter 地址、端口，并选择是否登录 Windows 后自动启动；
 3. 配置完成后它会自动启动代理；
-4. 在 OpenCode 发送一次请求，让代理捕获 OpenCode 的客户端识别头；
-5. 使用 Cherry Studio。
+4. 在 Cherry Studio 中填写本地代理地址，直接使用。
+
+**只使用 Cherry Studio 时，不需要下载或安装 OpenCode。**代理自带可立即使用的兼容请求头配置。
 
 日常操作：
 
@@ -109,18 +110,15 @@ Invoke-RestMethod http://127.0.0.1:8787/healthz
 
 代理会在后台隐藏运行，不会因为误关命令窗口而停止。需要关闭时，双击 `04-停止代理.cmd`。
 
-### 5. Cherry Studio 请求头兼容（自动）
+### 5. Cherry Studio 请求头兼容（自动，无需 OpenCode）
 
-如果你的账户被上游按客户端识别头区分，代理默认启用 Cherry Studio 兼容模式：
+如果你的账户被上游按客户端识别头区分，代理默认启用 Cherry Studio 兼容模式。内置兼容请求头会在首次启动时立即生效，因此可以直接使用 Cherry Studio。
 
-1. 先确保 OpenCode 的 `agentrouter-proxy` 指向本代理；
-2. 用 OpenCode 发任意一条请求一次；
-3. 代理会在项目根目录生成本机文件 `.opencode-header-profile.json`；
-4. 之后 Cherry Studio 的请求会保留自己的 `Authorization`，但将 `User-Agent` 及其它安全的客户端识别头替换成刚捕获的 OpenCode 版本。
+Cherry Studio 的请求会保留自己的 `Authorization`，同时使用内置的兼容 `User-Agent`、`Accept`、`Accept-Language` 等识别头。
 
-**没有 OpenCode 也能使用。**代理在没有捕获文件时，会自动使用内置的 OpenCode 兼容识别头；Cherry Studio 仍使用它自己的 `Authorization`。如果上游还要求某个只有特定客户端才携带的额外识别头，才需要用任一可用的兼容客户端通过本代理请求一次，以自动补全该安全头档案。
+如果用户本来就安装了 OpenCode，并让它通过本代理发送请求，代理可以选择性地将实际客户端识别头保存到 `.client-header-profile.json`，用于更新内置配置。这只是可选增强，不是使用 Cherry Studio 的前置步骤。
 
-该文件不会被 Git 跟踪。日志中出现以下内容，表示已经更新为真实 OpenCode 头：
+该文件不会被 Git 跟踪。日志中出现以下内容，表示可选配置已经更新：
 
 ```text
 INFO Captured OpenCode header profile for Cherry Studio compatibility.

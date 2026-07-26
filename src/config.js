@@ -67,7 +67,9 @@ export function createConfig(env = process.env) {
     ),
     openCodeHeaderProfileFile: path.resolve(
       process.cwd(),
-      env.OPENCODE_HEADER_PROFILE_FILE?.trim() || '.opencode-header-profile.json',
+      env.CLIENT_HEADER_PROFILE_FILE?.trim() ||
+        env.OPENCODE_HEADER_PROFILE_FILE?.trim() ||
+        '.client-header-profile.json',
     ),
     dropBillingSse: TRUE_VALUES.has((env.DROP_BILLING_SSE ?? 'true').toLowerCase()),
     logLevel: (env.LOG_LEVEL ?? 'info').toLowerCase(),

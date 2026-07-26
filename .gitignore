@@ -5,6 +5,7 @@ node_modules/
 coverage/
 *.log
 .opencode-header-profile.json
+.client-header-profile.json
 .proxy.pid
 .proxy.starting.lock
 logs/
