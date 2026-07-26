@@ -1,3 +1,12 @@
+写在前面：鸣谢
+
+本项目采用 SheAPI 提供的免费 gpt-5.6 完成编码。
+
+你也可以通过[我的邀请码](https://www.sheapi.top/sign-up?aff=8uZS) 加入。用我的邀请码注册，方能赠送 \$1。
+
+倍率 0.03x，经久耐用，每天还能获得 0.1~1 的签到奖励，续航时间长。
+
+
 # AgentRouter OpenAI Compatibility Proxy
 
 一个轻量、本地运行的 OpenAI 兼容代理，用于解决 AgentRouter 与 **Cherry Studio**、**OpenCode** 等客户端组合时的两个常见兼容性问题：
