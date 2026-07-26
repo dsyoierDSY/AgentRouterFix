@@ -5,32 +5,35 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$launcher = Join-Path $PSScriptRoot 'start-hidden.vbs'
+$launcher = Join-Path $PSScriptRoot 'start-hidden.ps1'
 $startupFolder = [Environment]::GetFolderPath('Startup')
-$shortcutPath = Join-Path $startupFolder 'AgentRouter OpenAI Compatibility Proxy.lnk'
+$startupFile = Join-Path $startupFolder 'AgentRouter OpenAI Compatibility Proxy.vbs'
+$legacyShortcut = Join-Path $startupFolder 'AgentRouter OpenAI Compatibility Proxy.lnk'
 
 if (-not (Test-Path -LiteralPath $launcher)) {
   throw "Launcher not found: $launcher"
 }
 
-if ((Test-Path -LiteralPath $shortcutPath) -and -not $Force) {
-  Write-Host "Startup shortcut already exists:" -ForegroundColor Yellow
-  Write-Host "  $shortcutPath"
+if ((Test-Path -LiteralPath $startupFile) -and -not $Force) {
+  Write-Host "Startup launcher already exists:" -ForegroundColor Yellow
+  Write-Host "  $startupFile"
   Write-Host "Use .\scripts\install-startup.ps1 -Force to replace it."
   exit 0
 }
 
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($shortcutPath)
-$shortcut.TargetPath = "$env:SystemRoot\System32\wscript.exe"
-$shortcut.Arguments = "`"$launcher`""
-$shortcut.WorkingDirectory = $projectRoot
-$shortcut.Description = 'Starts the AgentRouter OpenAI Compatibility Proxy silently at Windows logon.'
-$shortcut.WindowStyle = 7
-$shortcut.Save()
+$escapedLauncher = $launcher.Replace('"', '""')
+$startupContent = @"
+Option Explicit
+Dim shell
+Set shell = CreateObject("WScript.Shell")
+shell.Run "pwsh.exe -NoProfile -ExecutionPolicy Bypass -File ""$escapedLauncher""", 0, False
+"@
 
-Write-Host "Startup shortcut installed:" -ForegroundColor Green
-Write-Host "  $shortcutPath"
+Set-Content -LiteralPath $startupFile -Value $startupContent -Encoding ascii
+Remove-Item -LiteralPath $legacyShortcut -Force -ErrorAction SilentlyContinue
+
+Write-Host "Silent startup launcher installed:" -ForegroundColor Green
+Write-Host "  $startupFile"
 Write-Host "It will start automatically the next time you sign in to Windows."
 Write-Host "To start it now, double-click:"
 Write-Host "  $launcher"

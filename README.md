@@ -89,9 +89,9 @@ Invoke-RestMethod http://127.0.0.1:8787/healthz
 .\01-一键配置.cmd
 ```
 
-在向导中选择“登录 Windows 后自动启动代理”。脚本会在当前 Windows 用户的「启动」目录中创建快捷方式。
+在向导中选择“登录 Windows 后自动启动代理”。脚本会在当前 Windows 用户的「启动」目录中创建静默启动器。
 
-- 立即手动启动：双击 `scripts\start-proxy.cmd`
+- 立即手动启动：双击 `02-一键启动.cmd`
 - 取消自动启动：
 
   ```powershell
