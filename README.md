@@ -13,8 +13,9 @@
 
 1. 上游在一次正常的流式响应结束后，额外发送 `object: "billing.summary"` 的 SSE 数据帧；
 2. 严格遵循 OpenAI 响应 schema 的客户端把该帧当成聊天响应解析，因其中没有 `choices` 或 `error` 而报 `invalid_union`，进而中断 Agent/自动化流程。
+3. 部分 Claude/Opus 路由在工具调用前额外发送 `data: null`，导致 OpenCode 报 `Invalid input: expected object, received null`。
 
-本项目只移除该**不属于 OpenAI 聊天流协议**的账单事件，其余数据逐帧透传。尤其是，它会将 OpenCode 发出的 `Authorization`、`User-Agent`、`Accept` 等请求头**原样转发到 AgentRouter**；代理不会替换、删掉或生成这些鉴权相关头。
+本项目只移除不属于 OpenAI 聊天流协议的 `billing.summary` 和字面量 `null` 事件，其余数据逐帧透传。尤其是，它会将 OpenCode 发出的 `Authorization`、`User-Agent`、`Accept` 等请求头**原样转发到 AgentRouter**；代理不会替换、删掉或生成这些鉴权相关头。
 
 ## 最快使用方式（Windows）
 
@@ -164,6 +165,7 @@ API key:  <原本填写给 AgentRouter 的 API Key>
 
 - `object === "billing.summary"`，或
 - 带有顶级 `billing` 对象，且不是 OpenAI 的 `choices` / `error` 载荷。
+- 字面量 `null`（部分 Claude/Opus 工具调用流会发送该无效帧）。
 
 不会修改：
 

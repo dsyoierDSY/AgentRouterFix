@@ -1,13 +1,17 @@
+function eventData(sseEvent) {
+  return sseEvent
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart())
+    .join('\n');
+}
+
 /**
  * Returns true only for the known AgentRouter accounting event that cannot be
  * parsed as an OpenAI chat completion chunk by strict clients.
  */
 export function isOutOfBandBillingEvent(sseEvent) {
-  const data = sseEvent
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).trimStart())
-    .join('\n');
+  const data = eventData(sseEvent);
 
   if (!data || data === '[DONE]') return false;
 
@@ -26,6 +30,15 @@ export function isOutOfBandBillingEvent(sseEvent) {
     // Broken JSON should remain visible to the client instead of being hidden.
     return false;
   }
+}
+
+/**
+ * Some Claude/Opus routes emit a literal `data: null` SSE frame. This is not a
+ * valid OpenAI chat completion chunk and strict AI SDK schemas reject it before
+ * the following tool-call chunk can be processed.
+ */
+export function isNullCompatibilityEvent(sseEvent) {
+  return eventData(sseEvent).trim() === 'null';
 }
 
 /**
@@ -65,8 +78,11 @@ export class SseEventFilter {
       const event = this.pending.slice(0, end);
       this.pending = this.pending.slice(end);
 
-      if (this.dropBilling && isOutOfBandBillingEvent(event)) {
-        this.onDrop();
+      if (
+        this.dropBilling &&
+        (isOutOfBandBillingEvent(event) || isNullCompatibilityEvent(event))
+      ) {
+        this.onDrop(isNullCompatibilityEvent(event) ? 'null' : 'billing.summary');
       } else {
         blocks.push(event);
       }

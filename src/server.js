@@ -130,7 +130,7 @@ function getBody(req) {
 async function pipeSse(upstreamResponse, clientResponse, config, logger) {
   const filter = new SseEventFilter({
     dropBilling: config.dropBillingSse,
-    onDrop: () => logger.info('Dropped out-of-band billing.summary SSE event.'),
+    onDrop: (kind) => logger.info(`Dropped incompatible ${kind} SSE event.`),
   });
 
   for await (const chunk of Readable.fromWeb(upstreamResponse.body)) {

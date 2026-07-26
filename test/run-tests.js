@@ -4,7 +4,11 @@ import { once } from 'node:events';
 import { createConfig } from '../src/config.js';
 import { applyHeaderProfile, extractSafeProfileHeaders } from '../src/header-profile.js';
 import { createProxyServer } from '../src/server.js';
-import { isOutOfBandBillingEvent, SseEventFilter } from '../src/sse.js';
+import {
+  isNullCompatibilityEvent,
+  isOutOfBandBillingEvent,
+  SseEventFilter,
+} from '../src/sse.js';
 
 let passed = 0;
 
@@ -46,6 +50,8 @@ await run('recognizes unsupported billing SSE event only', () => {
     false,
   );
   assert.equal(isOutOfBandBillingEvent('data: [DONE]\n\n'), false);
+  assert.equal(isNullCompatibilityEvent('data: null\n\n'), true);
+  assert.equal(isNullCompatibilityEvent('data: {"choices":[]}\n\n'), false);
 });
 
 await run('filters a billing event split across byte chunks', () => {
@@ -71,6 +77,26 @@ await run('filters a billing event split across byte chunks', () => {
   assert.match(text, /\[DONE\]/);
   assert.doesNotMatch(text, /billing\.summary/);
   assert.equal(drops, 1);
+});
+
+await run('filters the literal null SSE frame emitted by Opus routes', () => {
+  const filter = new SseEventFilter();
+  const input = [
+    'data: {"object":"chat.completion.chunk","choices":[{"delta":{"content":"checking"}}]}\n\n',
+    'data: null\n\n',
+    'data: {"object":"chat.completion.chunk","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read","arguments":"{}"}}]}}]}\n\n',
+    'data: [DONE]\n\n',
+  ].join('');
+
+  const output = filter.push(new TextEncoder().encode(input));
+  const tail = filter.flush();
+  const text = new TextDecoder().decode(
+    Buffer.concat([output ?? new Uint8Array(), tail ?? new Uint8Array()]),
+  );
+
+  assert.doesNotMatch(text, /data: null/);
+  assert.match(text, /"name":"read"/);
+  assert.match(text, /\[DONE\]/);
 });
 
 await run('moves OpenCode identification headers without replacing Authorization', () => {
