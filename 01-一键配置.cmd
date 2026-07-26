@@ -1,22 +1,25 @@
 @echo off
 setlocal
-chcp 65001 >nul
 cd /d "%~dp0"
-set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
-if not exist "%PWSH%" set "PWSH=pwsh"
 
-"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\setup.ps1"
+where pwsh.exe >nul 2>nul
+if errorlevel 1 (
+  echo PowerShell 7 ^(pwsh.exe^) was not found in PATH.
+  echo Install PowerShell 7 and run this file again.
+  echo.
+  pause
+  exit /b 1
+)
+
+pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\setup.ps1"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.
 if not "%EXIT_CODE%"=="0" (
-  echo.
-  echo 配置未完成。请查看上方提示。
-  echo.
+  echo Setup failed. See the error above.
 ) else (
-  echo 配置已完成。
-  echo.
+  echo Setup completed.
 )
-echo 按任意键关闭此窗口...
-pause >nul
+echo.
+pause
 exit /b %EXIT_CODE%
