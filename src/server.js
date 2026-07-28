@@ -8,6 +8,7 @@ import {
   saveHeaderProfile,
 } from './header-profile.js';
 import { SseEventFilter } from './sse.js';
+import { requestUpstream } from './upstream.js';
 
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -62,9 +63,11 @@ function isOpenAiCompatiblePath(url) {
   );
 }
 
-function upstreamUrl(config, req) {
-  const base = config.upstreamBaseUrl.toString().replace(/\/$/, '');
-  return new URL(`${base}${requestPath(req)}`);
+function upstreamUrls(config, req) {
+  return [config.upstreamBaseUrl, ...(config.upstreamFallbackBaseUrls ?? [])].map((baseUrl) => {
+    const base = baseUrl.toString().replace(/\/$/, '');
+    return new URL(`${base}${requestPath(req)}`);
+  });
 }
 
 function inboundHeadersToUpstream(req, config, logger) {
@@ -150,7 +153,15 @@ function localAuthorizationAllowed(req, config) {
 /**
  * Creates, but does not start, the local OpenAI-compatible proxy.
  */
-export function createProxyServer(config, { fetchImpl = fetch, logger = createLogger(config.logLevel) } = {}) {
+export function createProxyServer(
+  config,
+  {
+    fetchImpl = fetch,
+    proxyRequestImpl,
+    proxyResolver,
+    logger = createLogger(config.logLevel),
+  } = {},
+) {
   return http.createServer(async (req, res) => {
     if (req.url === '/healthz' && req.method === 'GET') {
       return sendJson(res, 200, { ok: true, service: 'agentrouter-openai-compat' });
@@ -177,12 +188,25 @@ export function createProxyServer(config, { fetchImpl = fetch, logger = createLo
     let body;
     try {
       body = await getBody(req);
-      const response = await fetchImpl(upstreamUrl(config, req), {
-        method: req.method,
-        headers: inboundHeadersToUpstream(req, config, logger),
-        body: ['GET', 'HEAD'].includes(req.method ?? 'GET') ? undefined : body,
-        redirect: 'manual',
-      });
+      const response = await requestUpstream(
+        upstreamUrls(config, req),
+        {
+          method: req.method,
+          headers: inboundHeadersToUpstream(req, config, logger),
+          body: ['GET', 'HEAD'].includes(req.method ?? 'GET') ? undefined : body,
+          redirect: 'manual',
+        },
+        {
+          fetchImpl,
+          ...(proxyRequestImpl ? { proxyRequestImpl } : {}),
+          ...(proxyResolver ? { proxyResolver } : {}),
+          systemProxyFallback: config.systemProxyFallback,
+          systemProxyUrl: config.systemProxyUrl,
+          noProxy: config.noProxy,
+          timeoutMs: config.upstreamConnectTimeoutMs,
+          logger,
+        },
+      );
 
       const responseIsSse = isSse(response);
       res.writeHead(response.status, upstreamHeadersToClient(response.headers, responseIsSse));

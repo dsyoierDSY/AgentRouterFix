@@ -9,13 +9,16 @@
 
 # AgentRouter OpenAI Compatibility Proxy
 
-一个轻量、本地运行的 OpenAI 兼容代理，用于解决 AgentRouter 与 **Cherry Studio**、**OpenCode** 等客户端组合时的两个常见兼容性问题：
+一个轻量、本地运行的 OpenAI 兼容代理，用于解决 AgentRouter 与 **Cherry Studio**、**OpenCode** 等客户端组合时的常见兼容性和网络连接问题：
 
 1. 上游在一次正常的流式响应结束后，额外发送 `object: "billing.summary"` 的 SSE 数据帧；
 2. 严格遵循 OpenAI 响应 schema 的客户端把该帧当成聊天响应解析，因其中没有 `choices` 或 `error` 而报 `invalid_union`，进而中断 Agent/自动化流程。
 3. 部分 Claude/Opus 路由在工具调用前额外发送 `data: null`，导致 OpenCode 报 `Invalid input: expected object, received null`。
+4. 直连 AgentRouter 遇到 DNS、连接、TLS 或超时故障时，请求无法自动利用系统代理或官方备用域名恢复。
 
 本项目只移除不属于 OpenAI 聊天流协议的 `billing.summary` 和字面量 `null` 事件，其余数据逐帧透传。尤其是，它会将 OpenCode 发出的 `Authorization`、`User-Agent`、`Accept` 等请求头**原样转发到 AgentRouter**；代理不会替换、删掉或生成这些鉴权相关头。
+
+网络连接默认采用“主域名直连 → 官方备用域名直连 → 主域名系统代理 → 备用域名系统代理”的自动恢复顺序。只在网络层失败时切换；只要上游已经返回 HTTP 响应（包括 `401`、`403`、`429`、`500`），就立即原样返回，不会重复提交请求。
 
 ## 最快使用方式（Windows）
 
@@ -27,6 +30,8 @@
 4. 在 Cherry Studio 中填写本地代理地址，直接使用。
 
 **只使用 Cherry Studio 时，不需要下载或安装 OpenCode。**代理自带可立即使用的兼容请求头配置。
+
+备用域名与系统代理回退默认同时开启，不需要手工填写代理端口。程序会自动读取 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY`，也会读取 Windows 当前用户的静态“Internet 选项”代理。
 
 日常操作：
 
@@ -55,9 +60,14 @@ object: "billing.summary"
 ```mermaid
 flowchart LR
     C["Cherry Studio / OpenCode"] -->|"OpenAI API + SSE"| P["本地兼容代理<br/>127.0.0.1:8787"]
-    P -->|"原样转发 OpenCode 请求头"| A["AgentRouter"]
+    P -->|"① 主地址直连"| A["AgentRouter 主地址"]
+    P -.->|"② 备用地址直连"| B["ps.air-outer.com"]
+    P -.->|"③/④ 网络失败后<br/>通过系统代理"| S["系统 HTTP(S) 代理"]
+    S --> A
+    S --> B
     A -->|"chunk / [DONE] / billing.summary"| P
-    P -->|"只丢弃 billing.summary"| C
+    B -->|"chunk / [DONE] / billing.summary"| P
+    P -->|"丢弃 billing.summary / null"| C
 ```
 
 ## 快速开始（Windows / macOS / Linux）
@@ -71,12 +81,23 @@ flowchart LR
 ### 2. 下载并配置
 
 ```powershell
-git clone https://github.com/YOUR_ACCOUNT/agentrouter-openai-compat.git
-cd agentrouter-openai-compat
+git clone https://github.com/dsyoierDSY/AgentRouterFix.git
+cd AgentRouterFix
 .\01-一键配置.cmd
 ```
 
 一键配置会生成 `.env`。`UPSTREAM_BASE_URL` 必须是完整 API 基址，包括服务商要求的路径前缀（例如 `/v1`）。
+
+默认生成的网络恢复配置为：
+
+```dotenv
+UPSTREAM_FALLBACK_BASE_URLS=https://ps.air-outer.com
+SYSTEM_PROXY_FALLBACK=true
+UPSTREAM_CONNECT_TIMEOUT_MS=10000
+SYSTEM_PROXY_URL=
+```
+
+`SYSTEM_PROXY_URL` 通常保持为空；程序会自动发现系统代理。官方备用域名会自动继承主地址的 API 路径，例如主地址以 `/v1` 结尾时，备用地址也会请求 `/v1`。
 
 ### 3. 启动
 
@@ -178,6 +199,39 @@ API key:  <原本填写给 AgentRouter 的 API Key>
 
 所有丢弃仅写入本机代理日志，且不会记录 Authorization 值。
 
+### 上游网络自动恢复
+
+每个请求默认按以下顺序尝试：
+
+1. `.env` 中 `UPSTREAM_BASE_URL` 指定的地址直连；
+2. 官方备用域名 `https://ps.air-outer.com` 直连，并保留相同 API 路径、请求参数、请求头和 POST 请求体；
+3. 主地址通过系统 HTTP(S) 代理访问；
+4. 备用地址通过系统 HTTP(S) 代理访问。
+
+切换条件严格限定为网络层错误，例如：
+
+- DNS 解析失败；
+- TCP 连接失败或被拒绝；
+- TLS 握手失败；
+- 在 `UPSTREAM_CONNECT_TIMEOUT_MS` 内没有收到响应头。
+
+以下情况**不会**触发备用地址或代理重试：
+
+- 上游返回 `401` / `403`；
+- 上游返回 `429`；
+- 上游返回 `500` 等 HTTP 错误；
+- 已收到响应头后，流式响应在中途断开。
+
+这样可以避免同一个生成请求被重复执行，也不会用网络回退掩盖真实的鉴权、限流或服务端错误。
+
+系统代理发现优先级：
+
+1. 手工设置的 `SYSTEM_PROXY_URL`；
+2. `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 环境变量；
+3. Windows 当前用户“Internet 选项”中的静态代理。
+
+程序遵守 `NO_PROXY`。代理出口支持 HTTP 和 HTTPS forward proxy；HTTPS 上游通过 `CONNECT` 隧道访问，并继续支持 SSE 流式转发。当前版本不直接执行 PAC 脚本，也不直接连接 SOCKS 代理。如果系统使用 PAC/SOCKS，建议让代理软件同时提供本地 HTTP 代理环境变量，或将其 HTTP 代理入口填入 `SYSTEM_PROXY_URL`。
+
 ### 网络安全
 
 - 默认只监听 `127.0.0.1`，不能从局域网访问；
@@ -198,6 +252,15 @@ npm start
 ```text
 INFO Dropped out-of-band billing.summary SSE event.
 ```
+
+直连失败并成功发现系统代理时，日志类似：
+
+```text
+INFO Direct connection to https://agentrouter.org failed: fetch failed; trying alternate upstream.
+INFO Retrying https://agentrouter.org through system proxy http://127.0.0.1:7890 (HTTPS_PROXY).
+```
+
+日志只显示代理协议、主机和端口，不显示代理用户名、密码或请求鉴权内容。
 
 ### 临时关闭过滤（仅诊断）
 
@@ -231,6 +294,24 @@ npm test
 | --- | --- | --- |
 | `https://example.com/v1` | `/v1/chat/completions` | `/v1/chat/completions` |
 | `https://example.com/api/openai/v1` | `/v1/models` | `/api/openai/v1/models` |
+
+### 直连失败后没有使用系统代理
+
+依次检查：
+
+1. `.env` 中 `SYSTEM_PROXY_FALLBACK=true`；
+2. 代理软件提供的是 HTTP/HTTPS 代理入口，而不是只有 SOCKS/PAC；
+3. `NO_PROXY` 没有包含 `agentrouter.org` 或 `ps.air-outer.com`；
+4. 如果自动发现不适用，在 `.env` 中填写：
+
+   ```dotenv
+   SYSTEM_PROXY_URL=http://127.0.0.1:你的HTTP代理端口
+   ```
+
+5. 双击 `04-停止代理.cmd`，再双击 `02-一键启动.cmd` 使配置生效；
+6. 查看 `logs\proxy.out.log` 和 `logs\proxy.err.log`。
+
+如果 AgentRouter 已经返回了 HTTP 状态码，程序不会使用代理重试；这是防止重复请求的预期行为。
 
 ### 遇到 `unauthorized client detected`
 

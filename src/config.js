@@ -3,6 +3,50 @@ import path from 'node:path';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
+function parseTimeout(value) {
+  const timeout = Number(value ?? 10_000);
+  if (!Number.isInteger(timeout) || timeout < 100 || timeout > 120_000) {
+    throw new Error('UPSTREAM_CONNECT_TIMEOUT_MS must be an integer from 100 to 120000.');
+  }
+  return timeout;
+}
+
+function parseBaseUrl(rawValue, label) {
+  let url;
+  try {
+    url = new URL(rawValue);
+  } catch {
+    throw new Error(`${label} must be a complete HTTP(S) URL.`);
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error(`${label} must use http or https.`);
+  }
+  url.pathname = url.pathname.replace(/\/+$/, '') || '/';
+  url.search = '';
+  url.hash = '';
+  return url;
+}
+
+function parseFallbackBaseUrls(env, upstreamBaseUrl) {
+  const configured = env.UPSTREAM_FALLBACK_BASE_URLS;
+  const rawUrls =
+    configured === undefined
+      ? ['https://ps.air-outer.com']
+      : configured
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean);
+
+  const urls = [];
+  for (const rawUrl of rawUrls) {
+    const url = parseBaseUrl(rawUrl, 'Each UPSTREAM_FALLBACK_BASE_URLS entry');
+    // A host-only fallback inherits the API prefix from the primary endpoint.
+    if (url.pathname === '/') url.pathname = upstreamBaseUrl.pathname;
+    if (url.toString() !== upstreamBaseUrl.toString()) urls.push(url);
+  }
+  return urls;
+}
+
 /**
  * Loads a deliberately small subset of .env syntax so this proxy has no
  * runtime dependencies. Existing process environment values always win.
@@ -42,25 +86,19 @@ export function createConfig(env = process.env) {
     throw new Error('UPSTREAM_BASE_URL is required. Copy it from the AgentRouter dashboard.');
   }
 
-  let upstreamBaseUrl;
-  try {
-    upstreamBaseUrl = new URL(rawBaseUrl);
-  } catch {
-    throw new Error('UPSTREAM_BASE_URL must be a complete HTTP(S) URL.');
-  }
-  if (!['http:', 'https:'].includes(upstreamBaseUrl.protocol)) {
-    throw new Error('UPSTREAM_BASE_URL must use http or https.');
-  }
-
-  // Normalization makes path joining predictable, including bases such as /v1.
-  upstreamBaseUrl.pathname = upstreamBaseUrl.pathname.replace(/\/+$/, '') || '/';
-  upstreamBaseUrl.search = '';
-  upstreamBaseUrl.hash = '';
+  const upstreamBaseUrl = parseBaseUrl(rawBaseUrl, 'UPSTREAM_BASE_URL');
 
   return {
     host: env.HOST?.trim() || '127.0.0.1',
     port,
     upstreamBaseUrl,
+    upstreamFallbackBaseUrls: parseFallbackBaseUrls(env, upstreamBaseUrl),
+    upstreamConnectTimeoutMs: parseTimeout(env.UPSTREAM_CONNECT_TIMEOUT_MS),
+    systemProxyFallback: TRUE_VALUES.has(
+      (env.SYSTEM_PROXY_FALLBACK ?? 'true').toLowerCase(),
+    ),
+    systemProxyUrl: env.SYSTEM_PROXY_URL?.trim() || '',
+    noProxy: env.NO_PROXY ?? env.no_proxy ?? '',
     localProxyApiKey: env.LOCAL_PROXY_API_KEY?.trim() || '',
     cherryUseOpenCodeProfile: TRUE_VALUES.has(
       (env.CHERRY_USE_OPENCODE_PROFILE ?? 'true').toLowerCase(),

@@ -89,6 +89,10 @@ $envContent = @(
   'HOST=127.0.0.1',
   "PORT=$parsedPort",
   "UPSTREAM_BASE_URL=$($upstreamBaseUrl.TrimEnd('/'))",
+  'UPSTREAM_FALLBACK_BASE_URLS=https://ps.air-outer.com',
+  'SYSTEM_PROXY_FALLBACK=true',
+  'UPSTREAM_CONNECT_TIMEOUT_MS=10000',
+  'SYSTEM_PROXY_URL=',
   'CHERRY_USE_OPENCODE_PROFILE=true',
   'CLIENT_HEADER_PROFILE_FILE=.client-header-profile.json',
   'DROP_BILLING_SSE=true',
@@ -109,6 +113,7 @@ Write-Host "1. OpenCode 的 Base URL 填：http://127.0.0.1:$parsedPort/v1"
 Write-Host "2. Cherry Studio 的 API 地址填：http://127.0.0.1:$parsedPort"
 Write-Host '3. 两个客户端各自继续使用原来的 API Key。'
 Write-Host '4. Cherry Studio 可以直接使用，不需要安装或运行 OpenCode。'
+Write-Host '5. 官方备用域名和系统 HTTP(S) 代理回退已自动启用。'
 Write-Host ''
 
 if (Read-YesNo '现在启动代理？' $true) {

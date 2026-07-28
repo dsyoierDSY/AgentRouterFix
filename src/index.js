@@ -10,6 +10,16 @@ try {
   server.listen(config.port, config.host, () => {
     console.info(`AgentRouter compatibility proxy listening on http://${config.host}:${config.port}`);
     console.info(`Upstream: ${config.upstreamBaseUrl.origin}${config.upstreamBaseUrl.pathname}`);
+    if (config.upstreamFallbackBaseUrls.length) {
+      console.info(
+        `Alternate upstream: ${config.upstreamFallbackBaseUrls
+          .map((url) => `${url.origin}${url.pathname}`)
+          .join(', ')}`,
+      );
+    }
+    console.info(
+      `System proxy fallback: ${config.systemProxyFallback ? 'enabled' : 'disabled'}`,
+    );
     console.info(`Billing SSE filtering: ${config.dropBillingSse ? 'enabled' : 'disabled'}`);
   });
 
