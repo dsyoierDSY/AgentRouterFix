@@ -1,0 +1,37 @@
+services:
+  agentrouter-proxy:
+    build: .
+    image: agentrouter-fix:latest
+    container_name: agentrouter-proxy
+    restart: unless-stopped
+
+    # 复用现有 .env（UPSTREAM_BASE_URL、LOCAL_PROXY_API_KEY 等）
+    env_file:
+      - .env
+
+    # environment 优先级高于 env_file，用于强制覆盖 .env 中的 HOST=127.0.0.1。
+    # 缺少这一段会导致容器只绑定内部 loopback，端口映射静默失效。
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+
+    ports:
+      - "8787:8787"
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - require('node:http').get({host:'127.0.0.1',port:8787,path:'/healthz'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+    # 避免 debug 级 SSE 日志撑爆磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

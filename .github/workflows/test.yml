@@ -19,3 +19,30 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t agentrouter-fix:ci .
+      - name: 验证镜像不包含凭据文件
+        run: |
+          if docker run --rm agentrouter-fix:ci sh -c 'ls -a /app' | grep -q '^\.env$'; then
+            echo "镜像中混入了 .env，请检查 .dockerignore" >&2
+            exit 1
+          fi
+      - name: 冒烟测试
+        run: |
+          docker run -d --name smoke -p 8787:8787 \
+            -e UPSTREAM_BASE_URL=https://example.test/v1 \
+            agentrouter-fix:ci
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8787/healthz; then exit 0; fi
+            sleep 1
+          done
+          echo "健康检查未在 15 秒内通过" >&2
+          docker logs smoke >&2
+          exit 1
+      - name: 清理
+        if: always()
+        run: docker rm -f smoke || true

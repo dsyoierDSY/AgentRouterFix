@@ -1,0 +1,26 @@
+.git/
+.github/
+node_modules/
+
+# 凭据与本地运行状态：绝不进入镜像层
+.env
+.env.*
+!.env.example
+.client-header-profile.json
+.opencode-header-profile.json
+.proxy.pid
+.proxy.starting.lock
+logs/
+*.log
+
+# Windows 专用部署方式，容器内无用
+scripts/
+*.cmd
+*.ps1
+*.vbs
+
+# 非运行时必需
+test/
+coverage/
+README.md
+LICENSE

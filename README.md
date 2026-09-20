@@ -146,6 +146,76 @@ Cherry Studio 的请求会保留自己的 `Authorization`，同时使用内置�
 INFO Captured OpenCode header profile for Cherry Studio compatibility.
 ```
 
+## Docker 部署（局域网 / 服务器）
+
+适合部署到常开的机器或 NAS，供局域网内多台设备共用。与上面的 Windows 方式并列，两者互不影响。
+
+### 1. 前置条件
+
+- Docker Engine 与 Compose v2（`docker compose version` 可用）
+- **不再需要**在宿主机安装 Node.js
+- 一个仍有效的 AgentRouter API Key
+
+### 2. 配置
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`，至少填写 `UPSTREAM_BASE_URL`。`HOST` 保持 `127.0.0.1` 即可，`docker-compose.yml` 会自动覆盖为 `0.0.0.0`。
+
+局域网部署**强烈建议**设置 `LOCAL_PROXY_API_KEY`：
+
+```dotenv
+LOCAL_PROXY_API_KEY=你的AgentRouterApiKey
+```
+
+> **⚠️ 该值必须与你的 AgentRouter API Key 完全相同。**
+> 本代理不存储任何上游凭据，客户端的 `Authorization` 会被原样透传到上游。若在此填写一个自定义密码，本地鉴权会通过、但上游会返回 401。
+
+### 3. 启动
+
+```bash
+docker compose up -d --build
+```
+
+### 4. 健康检查
+
+```bash
+curl http://127.0.0.1:8787/healthz
+```
+
+应返回：
+
+```json
+{"ok":true,"service":"agentrouter-openai-compat"}
+```
+
+健康检查端点不需要鉴权，即使设置了 `LOCAL_PROXY_API_KEY` 也能直接访问。
+
+### 5. 日常操作
+
+| Windows 方式 | Docker 方式 |
+| --- | --- |
+| `02-一键启动.cmd` | `docker compose up -d` |
+| `03-检查状态.cmd` | `docker compose ps` |
+| `04-停止代理.cmd` | `docker compose down` |
+| 查看 `logs\proxy.*.log` | `docker compose logs -f` |
+| 向导中的开机自启 | `restart: unless-stopped`（已内置） |
+
+### 6. 客户端连接
+
+将下方「Cherry Studio 配置」「OpenCode 配置」中的 `127.0.0.1` 换成运行 Docker 的主机局域网 IP，其余填法完全一致。
+
+### 7. 安全提示
+
+本代理**不存储任何上游凭据**，因此局域网暴露不会导致他人白嫖你的 AgentRouter 额度——没有有效 Key 的请求会被上游直接拒绝。但仍有两点需要注意：
+
+- **请求头档案投毒**：任何人只要发送 `User-Agent` 含 `opencode` 的请求，就能把任意请求头写入 `.client-header-profile.json`，该档案随后会作用于全部 Cherry Studio 请求。鉴权检查发生在写入之前，因此**设置 `LOCAL_PROXY_API_KEY` 可以完全封堵这一途径**——这正是推荐启用它的主要原因。
+- **明文传输**：局域网内为 HTTP 明文，客户端 API Key 可能被嗅探。建议仅在可信内网使用，或在前面加一层反向代理提供 TLS。
+
+默认不持久化 `.client-header-profile.json`：该文件只是可选缓存，缺失时会自动回落到内置兼容请求头。如确需持久化，可挂载卷并设置 `CLIENT_HEADER_PROFILE_FILE=/data/.client-header-profile.json`（需为绝对路径）。
+
 ## Cherry Studio 配置
 
 新建一个 **OpenAI 兼容**（或 Custom OpenAI）提供商：
@@ -238,6 +308,8 @@ API key:  <原本填写给 AgentRouter 的 API Key>
 - OpenCode 继续管理它原本使用的 API Key；代理不替换该请求头；
 - 若将 `HOST` 改为 `0.0.0.0`，必须额外配置反向代理鉴权、TLS 和防火墙；本程序不适合直接公网暴露。
 
+Docker 部署会监听 `0.0.0.0` 以便局域网访问，对应的具体做法见上文「Docker 部署 → 安全提示」：设置 `LOCAL_PROXY_API_KEY`（值需与 AgentRouter API Key 相同）、仅在可信内网使用、必要时前置反向代理提供 TLS。
+
 ## 诊断与验证
 
 ### 查看不兼容事件是否被过滤
@@ -245,6 +317,12 @@ API key:  <原本填写给 AgentRouter 的 API Key>
 ```powershell
 $env:LOG_LEVEL = "debug"
 npm start
+```
+
+Docker 部署时的等价写法：
+
+```bash
+docker compose run --rm -e LOG_LEVEL=debug agentrouter-proxy
 ```
 
 正常的修复日志类似：
@@ -294,6 +372,23 @@ npm test
 | --- | --- | --- |
 | `https://example.com/v1` | `/v1/chat/completions` | `/v1/chat/completions` |
 | `https://example.com/api/openai/v1` | `/v1/models` | `/api/openai/v1/models` |
+
+### Docker 容器已启动但连不上
+
+如果 `docker compose ps` 显示容器在运行，访问却立即被拒绝或返回空回复，通常是 `HOST` 被覆盖成了 `127.0.0.1`——此时进程只绑定容器内部回环地址，端口映射不会生效。
+
+确认 `docker-compose.yml` 中保留了这一段：
+
+```yaml
+environment:
+  HOST: 0.0.0.0
+```
+
+Compose 的变量优先级为 `environment` > `env_file` > 镜像 `ENV`，因此这一段是必需的，否则 `.env` 中的 `HOST=127.0.0.1` 会覆盖镜像内置的默认值。使用 `docker run` 时同理，必须显式加上 `-e HOST=0.0.0.0`。
+
+### Docker 部署下全部请求返回 401
+
+检查 `.env` 中的 `LOCAL_PROXY_API_KEY` 是否与 AgentRouter API Key 完全一致。该请求头会被透传到上游，若填写的是自定义密码，本地鉴权可以通过、但上游会拒绝。留空则完全不做本地鉴权。
 
 ### 直连失败后没有使用系统代理
 

@@ -210,6 +210,92 @@ await run('does not require an extra local key by default', async () => {
   }
 });
 
+await run('rejects requests that omit the configured local proxy key', async () => {
+  let upstreamCalls = 0;
+  const upstream = http.createServer((req, res) => {
+    upstreamCalls++;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"object":"list","data":[]}');
+  });
+  const upstreamPort = await listen(upstream);
+  const config = createConfig({
+    UPSTREAM_BASE_URL: `http://127.0.0.1:${upstreamPort}/v1`,
+    LOCAL_PROXY_API_KEY: 'shared-agentrouter-key',
+  });
+  const proxy = createProxyServer(config, { logger: quietLogger });
+  const proxyPort = await listen(proxy);
+
+  try {
+    const missing = await fetch(`http://127.0.0.1:${proxyPort}/v1/models`);
+    assert.equal(missing.status, 401);
+
+    const wrong = await fetch(`http://127.0.0.1:${proxyPort}/v1/models`, {
+      headers: { authorization: 'Bearer some-other-key' },
+    });
+    assert.equal(wrong.status, 401);
+
+    // The local key gate must run before anything reaches the upstream.
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    await close(proxy);
+    await close(upstream);
+  }
+});
+
+await run('forwards requests that present the configured local proxy key', async () => {
+  let receivedAuthorization;
+  const upstream = http.createServer((req, res) => {
+    receivedAuthorization = req.headers.authorization;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"object":"list","data":[]}');
+  });
+  const upstreamPort = await listen(upstream);
+  const config = createConfig({
+    UPSTREAM_BASE_URL: `http://127.0.0.1:${upstreamPort}/v1`,
+    LOCAL_PROXY_API_KEY: 'shared-agentrouter-key',
+  });
+  const proxy = createProxyServer(config, { logger: quietLogger });
+  const proxyPort = await listen(proxy);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/models`, {
+      headers: { authorization: 'Bearer shared-agentrouter-key' },
+    });
+    assert.equal(response.status, 200);
+    // The key doubles as the upstream credential, so it passes through unchanged.
+    assert.equal(receivedAuthorization, 'Bearer shared-agentrouter-key');
+  } finally {
+    await close(proxy);
+    await close(upstream);
+  }
+});
+
+await run('keeps the health endpoint reachable even when a local proxy key is configured', async () => {
+  const config = createConfig({
+    UPSTREAM_BASE_URL: 'https://example.test/v1',
+    LOCAL_PROXY_API_KEY: 'shared-agentrouter-key',
+  });
+  const proxy = createProxyServer(config, { logger: quietLogger });
+  const proxyPort = await listen(proxy);
+
+  try {
+    // Container health checks probe this endpoint without credentials.
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/healthz`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      service: 'agentrouter-openai-compat',
+    });
+
+    // The route matches the exact URL, so probes must not append a query
+    // string. Container HEALTHCHECK definitions depend on this.
+    const withQuery = await fetch(`http://127.0.0.1:${proxyPort}/healthz?probe=1`);
+    assert.equal(withQuery.status, 404);
+  } finally {
+    await close(proxy);
+  }
+});
+
 await run('accepts Cherry Studio style paths that omit /v1 from its configured base URL', async () => {
   let receivedPath;
   const upstream = http.createServer((req, res) => {
